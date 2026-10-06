@@ -1,90 +1,98 @@
 # Smart Stay
 
-A hostel management platform where residents book shared facilities, raise maintenance requests, and recover lost belongings, while admins run everything from one dashboard.
+Smart Stay is a web app we built as a team to make college life a bit less chaotic. Students can book shared facilities like the gym or study hall, report problems around campus, and get lost stuff back. The college admin handles everything from one dashboard.
 
-Smart Stay goes beyond a plain CRUD app. Facility bookings are policed by a reliability score, maintenance tickets escalate on their own when ignored, and lost-and-found reports are matched by comparing item photos with a computer-vision model.
+We didn't want it to be just another form-and-database project, so we added a few things that make it smarter: a reliability score that keeps bookings fair, complaints that escalate on their own if nobody looks at them, and a photo-matching model that links lost items with found ones.
 
 ---
 
-## How it works
+## Why we built it
 
-**Accounts and access.** Residents register with an email and password (hashed with bcrypt) and log in with a six-digit OTP sent to their inbox, valid for five minutes. Sessions live in MongoDB for 24 hours. The admin account is seeded on first start and logs in directly.
+Anyone who has lived in a college hostel knows the problems. The table tennis room is "booked" but empty. A broken tap gets reported five times and nothing happens. Someone loses their earphones and the only option is a WhatsApp group message that gets buried in minutes. We tried to fix these three things in one app.
 
-**Facility booking.** A resident picks a facility (gym, table tennis, study hall, badminton, TV room), a date and a time slot. Past dates and already-taken slots are rejected. Every resident starts with a reliability rating of 5.0, and the system adjusts it automatically:
+---
 
-| Event | Effect on rating |
+## What it does
+
+**Login.** Students sign up with an email and password (passwords are hashed with bcrypt). Every login needs a six-digit OTP sent to their email, which expires in five minutes. Sessions last 24 hours. The admin account is created automatically the first time the server starts.
+
+**Facility booking.** A student picks a facility (gym, table tennis, study hall, badminton or TV room), a date and a time slot. You can't book a past date or a slot someone else already has.
+
+To stop people from blocking slots and not showing up, everyone starts with a reliability rating of 5.0 that changes automatically:
+
+| What happens | Rating change |
 | --- | --- |
-| Admin verifies the slot was used properly | +0.2 (capped at 5.0) |
-| Booking cancelled by the resident | -0.5 |
-| No check-in within 15 minutes of start (auto-cancelled) | -0.5 |
-| Booking auto-cancelled after two "facility is empty" reports | -0.5 |
-| Filing a report against a booking that was actually in use | -0.7 |
+| Admin confirms you used the slot properly | +0.2 (max 5.0) |
+| You cancel your booking | -0.5 |
+| You don't check in within 15 minutes of the start time (auto-cancelled) | -0.5 |
+| Booking gets auto-cancelled after two "facility is empty" reports | -0.5 |
+| You report someone, but the booking was actually being used | -0.7 |
 
-Below 3.0 a resident is blocked from booking until an admin unblocks them. A background job runs every five minutes to enforce the no-show rule.
+If your rating drops below 3.0, you can't book anything until the admin unblocks you. A background job runs every five minutes to catch no-shows.
 
-**Service requests.** Residents file a request with a category, location and severity, which sets its priority. Repeat issues are flagged as recurring, and each request is assigned to the staff member with the best balance of rating and current workload. A request left untouched for 24 hours is escalated to high priority and the admin is emailed. After completion, the resident rates the work, which feeds back into the staff member's rating. An analytics endpoint reports average resolution time, the most frequent issue categories and top-rated staff.
+**Service requests.** For problems like a broken fan or a leaking pipe, students file a request with a category, location and how serious it is. That decides its priority. If the same issue keeps coming back, it gets flagged as recurring. Each request is given to the staff member with the best mix of good rating and light workload. If a request sits untouched for 24 hours, it automatically becomes high priority and the admin gets an email. Once the work is done, the student rates it, and that rating goes into the staff member's score. There's also an analytics endpoint that shows average fix time, the most common issues and the top-rated staff.
 
-**Lost and found.** Residents report a lost or found item with a photo. A separate Python service turns each photo into an embedding using a pretrained MobileNetV2, and the backend compares a report against all open reports of the opposite type using cosine similarity. Matches scoring 0.60 or higher are returned, best three first. Confirming a match closes both reports. If the AI service is offline, matching is skipped and the rest of the app keeps working.
+**Lost and found.** Students post a lost or found item with a photo. A separate Python service converts each photo into a set of numbers (an embedding) using a pretrained MobileNetV2 model. We then compare a new post against all open posts of the opposite type using cosine similarity. Anything scoring 0.60 or more is shown as a match, best three first. Once a match is confirmed, both posts close. If the AI service is down, matching is skipped and the rest of the app still works fine.
 
-**Notifications.** Registration, OTPs, bookings, status changes, penalties and escalations all trigger HTML emails through SendGrid. Without a SendGrid key, emails are logged to the console instead of sent, which makes local development painless.
-
----
-
-## Architecture
-
-```
- Browser (HTML / CSS / JS)
-          │  fetch + session cookie
-          ▼
- Express API  ──────────────►  SendGrid (email)
-  │   │   │                    Cloudinary (images)
-  │   │   └─ node-cron: no-show cancellation, ticket escalation
-  │   │
-  │   └──► FastAPI service (MobileNetV2 embeddings + similarity)
-  ▼
- MongoDB (users, bookings, requests, lost & found, sessions)
-```
+**Emails.** Registration, OTPs, bookings, status updates, penalties and escalations all send an email through SendGrid. If there's no SendGrid key, the emails just print in the console, which is handy while testing.
 
 ---
 
-## Getting started
+## How it fits together
 
-**Prerequisites:** Node.js 18+, a MongoDB instance (local or Atlas), and Python 3.10 if you want image matching.
+```
+Browser (HTML / CSS / JS)
+         │  fetch + session cookie
+         ▼
+Express API  ──────────────►  SendGrid (email)
+ │   │   │                    Cloudinary (images)
+ │   │   └─ node-cron: no-show cancellation, ticket escalation
+ │   │
+ │   └──► FastAPI service (MobileNetV2 embeddings + similarity)
+ ▼
+MongoDB (users, bookings, requests, lost & found, sessions)
+```
 
-```bash
-git clone https://github.com/WebDoveleprrr/Smart_Stay.git
-cd Smart_Stay
+---
+
+## Running it yourself
+
+You'll need Node.js 18+, a MongoDB database (local or Atlas), and Python 3.10 if you want the image matching.
+
+```
+git clone https://github.com/sanjay-kalagarla/smart-stay.git
+cd smart-stay
 npm install
 ```
 
-Create a `.env` file in the project root:
+Make a `.env` file in the project root:
 
-| Variable | Purpose |
+| Variable | What it's for |
 | --- | --- |
 | `MONGO_URI` | MongoDB connection string. **Required.** |
-| `SESSION_SECRET` | Secret used to sign session cookies. |
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Credentials for the seeded admin account. Set your own. |
-| `SENDGRID_API_KEY`, `EMAIL_USER` | SendGrid key and the verified sender address. |
-| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Image hosting for lost-and-found photos. |
-| `AI_URL` | Base URL of the AI service, for example `http://localhost:8000`. |
+| `SESSION_SECRET` | Secret for signing session cookies. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | Login for the admin account. Set your own. |
+| `SENDGRID_API_KEY`, `EMAIL_USER` | SendGrid key and the verified sender email. |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Where lost-and-found photos are stored. |
+| `AI_URL` | Address of the AI service, like `http://localhost:8000`. |
 | `PORT` | Server port. Defaults to 3000. |
 
 Start the app:
 
-```bash
-npm run dev      # development, with nodemon
+```
+npm run dev      # development, auto-restarts with nodemon
 npm start        # production
 ```
 
-To enable image matching, run the AI service in a second terminal:
+For image matching, open a second terminal and run the AI service:
 
-```bash
+```
 cd ai_service
 pip install -r requirements.txt
 uvicorn main:app --port 8000
 ```
 
-The app is then available at `http://localhost:3000`.
+Then open `http://localhost:3000`.
 
 ---
 
@@ -103,7 +111,7 @@ The app is then available at `http://localhost:3000`.
 ## Project structure
 
 ```
-Smart_Stay/
+smart-stay/
 ├── server.js          App setup, auth, lost & found, admin routes
 ├── controllers/       Booking and service request logic
 ├── routes/            Express routers for bookings and services
@@ -111,8 +119,17 @@ Smart_Stay/
 ├── utils/             Cron jobs and the SendGrid mailer
 ├── ai_service/        FastAPI service for image embeddings and matching
 ├── public/images/     Static assets
-└── *.html             Login, resident dashboard, admin dashboard
+└── *.html             Login, student dashboard, admin dashboard
 ```
+
+---
+
+## Team
+
+This was built by a team of college students.
+
+- Sanjay Kalagarla ([@sanjay-kalagarla](https://github.com/sanjay-kalagarla))
+- *Add your teammates here*
 
 ---
 

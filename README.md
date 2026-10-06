@@ -124,15 +124,6 @@ smart-stay/
 
 ---
 
-## Team
-
-This was built by a team of college students.
-
-- Sanjay Kalagarla ([@sanjay-kalagarla](https://github.com/sanjay-kalagarla))
-- *Add your teammates here*
-
----
-
 ## Tech stack
 
 | Layer | Technologies |
